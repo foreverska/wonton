@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <unistd.h> //sleep
 
 #include <sys/socket.h>
 #include <netdb.h>
@@ -31,6 +32,14 @@ void set_nickname(char * nick)
 		free(nickname);
 	nickname = malloc(strlen(nick));
 	strcpy(nickname, nick);
+}
+
+void set_channel(char * chan)
+{
+	if(channel)
+		free(channel);
+	channel = malloc(strlen(chan));
+	strcpy(channel, chan);
 }
 
 void resolve_host()
@@ -77,7 +86,6 @@ int irc_message(char * message)
 	{
 		char * packet = malloc(1501);
 		
-		printf("Ping Request Recieved\n");
 		snprintf(packet, 1500, "PONG %s\r\n", code);
 		
 		irc_send(packet);
@@ -90,7 +98,7 @@ int irc_message(char * message)
 		
 		sscanf(optional, "%ms :%m[^\n]s", &room, &message);
 		
-		if(!strcmp(room, "#forevertest"))
+		if(!strcmp(room, channel))
 		{
 			char *username;
 			
@@ -118,6 +126,8 @@ int irc_message(char * message)
 		free(optional);
 	if(msg)
 		free(msg);
+		
+	return 0;
 }
 
 void *listener(void * args)
@@ -146,6 +156,8 @@ void *listener(void * args)
 	}
 
 	free(buffer);
+	
+	return NULL;
 }
 
 
@@ -167,7 +179,7 @@ void irc_ident()
 	
 	sleep(1);
 	
-	sprintf(packet, "JOIN #forevertest\r\n");
+	sprintf(packet, "JOIN %s\r\n", channel);
 	if(irc_send(packet))
 	{
 		return;
@@ -190,6 +202,8 @@ int connect_server()
 		return errno;
 	}
 	
-	int rc = pthread_create(&listener_t, NULL, listener, (void *) &sock);
+	pthread_create(&listener_t, NULL, listener, (void *) &sock);
 	irc_ident();
+	
+	return 0;
 }
