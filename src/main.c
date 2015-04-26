@@ -33,6 +33,7 @@ void parameters(int argc, char **argv)
 		{
 			if(i+1 <= argc)
 			{
+				free(hostname);
 				set_hostname(argv[++i]);
 			}
 			else
@@ -45,6 +46,7 @@ void parameters(int argc, char **argv)
 		{
 			if(i+1 <= argc)
 			{
+				free(nickname);
 				set_nickname(argv[++i]);
 			}
 			else
@@ -57,6 +59,7 @@ void parameters(int argc, char **argv)
 		{
 			if(i+1 <= argc)
 			{
+				free(channel);
 				set_channel(argv[++i]);
 			}
 			else

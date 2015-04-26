@@ -21,24 +21,18 @@ pthread_t listener_t;
 
 void set_hostname(char * host)
 {
-	if(hostname)
-		free(hostname);
 	hostname = malloc(strlen(host));
 	strcpy(hostname, host);
 }
 
 void set_nickname(char * nick)
 {
-	if(nickname)
-		free(nickname);
 	nickname = malloc(strlen(nick));
 	strcpy(nickname, nick);
 }
 
 void set_channel(char * chan)
 {
-	if(channel)
-		free(channel);
 	channel = malloc(strlen(chan));
 	strcpy(channel, chan);
 }
@@ -80,17 +74,32 @@ int irc_send(char * packet)
 
 int irc_message(char * message)
 {
-	char *server = NULL, *target = NULL, *code = NULL, *optional = NULL, *msg = NULL;
+	char *prefix = NULL, *command = NULL, *parameters = NULL;
 	
-	sscanf(message, "%ms %ms %m[^\n]s", &server, &code, &optional);
-	if(!strcmp(server, "PING"))
+	sscanf(message, "%ms %ms%m[^\n]s", &prefix, &command, &parameters);
+	
+	if(!prefix)
+	{
+		printf("Missing prefix in packet.  Skipping message.\n");
+		return -1;
+	}
+	
+	if(!command)
+	{
+		printf("Missing command in packet.  Skipping message\n");
+		printf("%s\n",message);
+		free(prefix);
+		return -1;
+	}
+	
+	if(!strcmp(prefix, "PING"))
 	{
 		pthread_t thread;
-	
-		char * pass = malloc(sizeof(code));  //the thread will free this when it's done with it
+		
+		char * pass = malloc(sizeof(command));  //the thread will free this when it's done with it
 		if(pass)
 		{
-			strcpy(pass, code);
+			strcpy(pass, command);
 		
 			pthread_create(&thread, NULL, ping, (void *) pass);
 		}
@@ -98,57 +107,87 @@ int irc_message(char * message)
 		{
 			printf("Error in malloc in PING code.  PONG not sent.\n");
 		}
-	}
-	else if(!strcmp(code, "PRIVMSG"))
-	{
-		char *room = NULL, *message = NULL;
 		
-		sscanf(optional, "%ms :%m[^\n]s", &room, &message);
+		free(prefix);
+		free(command);
+		return 0;
+	}
+	
+	if(!strcmp(command, "PRIVMSG"))
+	{
+		char *room = NULL, *msg = NULL;
+		
+		sscanf(parameters, "%ms :%m[^\n]s", &room, &msg);
+		
+		if(!room || !msg)
+		{
+			printf("Malformed PRIVMSG.  Throwing away.\n");
+			
+			free(prefix);
+			free(command);
+			if(room)
+				free(room);
+			if(msg)
+				free(msg);
+			
+			return -1;
+		}
 		
 		if(!strcmp(room, channel))
 		{
 			char *username;
 			
-			sscanf(server, ":%m[^!]s", &username);
-			printf("%s: %s\n", username, message);
+			sscanf(prefix, ":%m[^!]s", &username);
+			printf("%s: %s\n", username, msg);
 			
 			free(username);
 		}
 		
 		free(room);
-		free(message);
+		free(msg);
 	}
-	else if(atoi(code))
+	else if(atoi(command))
 	{
 		//miscellaneous codes, none of which I'm concerned with yet
+		if(atoi(command) == 376)
+		{
+			char * packet = malloc(1501);
+			
+			snprintf(packet, 1500, "JOIN %s\r\n", channel);
+			if(irc_send(packet))
+			{
+				return -1;
+			}
+		}
 	}
 	
-	if(server)
-		free(server);
-	if(code)
-		free(code);
-	if(target)
-		free(target);
-	if(optional)
-		free(optional);
-	if(msg)
-		free(msg);
+	free(prefix);
+	free(command);
 		
 	return 0;
 }
 
 void *listener(void * args)
 {
-	char * buffer = malloc(1501);
+	int n;
+	unsigned int m = sizeof(n);
+	getsockopt(sock,SOL_SOCKET,SO_RCVBUF,(void *)&n, &m);
+	
+	char * buffer = malloc(n+1);
+	if(!buffer)
+	{
+		printf("Listener Buffer (%d bytes) not allocated.  Exiting.\n", n);
+		return NULL;
+	}
 	
 	listener_alive = 1;
 	
 	while(listener_alive)
 	{
-		int ret = recv(sock, buffer, 1501, 0);
+		int ret = recv(sock, buffer, n+1, 0);
 		if(ret == -1)
 		{
-			printf("Issue with recv: %d.  Closing listener thread.", errno);
+			printf("Issue with recv: %d.  Closing listener thread.\n", errno);
 			listener_alive = 0;
 			break;
 		}
@@ -159,7 +198,22 @@ void *listener(void * args)
 			break;
 		}
 		
-		irc_message(buffer);
+		buffer[ret] = '\0';
+		char *current = buffer;
+		while(*current)
+		{
+			char *pass;
+			
+			sscanf(current,"%m[^\r]s", &pass);
+			if(!pass)
+				break;
+				
+			current += strlen(pass)+2;
+			
+			irc_message(pass);
+			
+			free(pass);
+		}
 	}
 
 	free(buffer);
@@ -179,14 +233,6 @@ void irc_ident()
 	}
 	
 	sprintf(packet, "USER %s 0 * :%s\r\n", nickname, "pishaw");
-	if(irc_send(packet))
-	{
-		return;
-	}
-	
-	sleep(1);
-	
-	sprintf(packet, "JOIN %s\r\n", channel);
 	if(irc_send(packet))
 	{
 		return;
