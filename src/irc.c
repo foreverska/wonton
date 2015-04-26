@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 
 #include "irc.h"
+#include "ping.h"
 
 int sock;
 struct in_addr server_addr;
@@ -84,15 +85,21 @@ int irc_message(char * message)
 	sscanf(message, "%ms %ms %m[^\n]s", &server, &code, &optional);
 	if(!strcmp(server, "PING"))
 	{
-		char * packet = malloc(1501);
+		pthread_t thread;
+	
+		char * pass = malloc(sizeof(code));  //the thread will free this when it's done with it
+		if(pass)
+		{
+			strcpy(pass, code);
 		
-		snprintf(packet, 1500, "PONG %s\r\n", code);
-		
-		irc_send(packet);
-		
-		free(packet);
+			pthread_create(&thread, NULL, ping, (void *) pass);
+		}
+		else
+		{
+			printf("Error in malloc in PING code.  PONG not sent.\n");
+		}
 	}
-	if(!strcmp(code, "PRIVMSG"))
+	else if(!strcmp(code, "PRIVMSG"))
 	{
 		char *room = NULL, *message = NULL;
 		

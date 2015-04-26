@@ -97,7 +97,7 @@ int main(int argc, char **argv)
 	connect_server();
 	
 	sleep(1);
-	while(listener_alive){}
+	while(listener_alive){sleep(1);}
 	
 	return 0;
 }
