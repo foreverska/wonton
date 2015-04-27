@@ -11,6 +11,7 @@
 
 #include "irc.h"
 #include "ping.h"
+#include "privmsg.h"
 
 int sock;
 struct in_addr server_addr;
@@ -72,11 +73,51 @@ int irc_send(char * packet)
 	return 0;
 }
 
+int substr(char * string, char **substr, char stop_char)
+{
+	int count = 0, ret;
+	
+	while(string[count] != stop_char)
+	{
+		if(string[count] == '\0')
+				break;
+		count++;
+	}
+	
+	ret = count;	
+	*substr = calloc(count+1,1);
+	if(!*substr)
+		return -1;
+	
+	(*substr)[count--] = '\0';
+	while(count > -1)
+	{
+		(*substr)[count] = string[count];
+		count--;
+	}
+		
+	return ret;
+}
+
 int irc_message(char * message)
 {
-	char *prefix = NULL, *command = NULL, *parameters = NULL;
+	char *prefix = NULL, *command = NULL, *parameters = NULL, *temp;
+	int prefix_len, command_len, parameters_len;
 	
-	sscanf(message, "%ms %ms%m[^\n]s", &prefix, &command, &parameters);
+	//Strip prefix, command and put the rest in a string
+	prefix_len = substr(message, &prefix, ' ');
+	temp = message + prefix_len;
+	if(temp != '\0')
+	{
+		temp++;
+		command_len = substr(temp, &command, ' ');
+	}
+	temp =  temp + command_len ;
+	if(temp != '\0')
+	{
+		temp++;
+		parameters_len = substr(temp, &parameters, '\r');
+	}
 	
 	if(!prefix)
 	{
@@ -87,68 +128,20 @@ int irc_message(char * message)
 	if(!command)
 	{
 		printf("Missing command in packet.  Skipping message\n");
-		printf("%s\n",message);
 		free(prefix);
 		return -1;
 	}
 	
 	if(!strcmp(prefix, "PING"))
 	{
-		pthread_t thread;
-		
-		char * pass = malloc(sizeof(command));  //the thread will free this when it's done with it
-		if(pass)
-		{
-			strcpy(pass, command);
-		
-			pthread_create(&thread, NULL, ping, (void *) pass);
-		}
-		else
-		{
-			printf("Error in malloc in PING code.  PONG not sent.\n");
-		}
-		
-		free(prefix);
-		free(command);
-		return 0;
+		start_pingThread(command, command_len);
 	}
-	
-	if(!strcmp(command, "PRIVMSG"))
+	else if(!strcmp(command, "PRIVMSG"))
 	{
-		char *room = NULL, *msg = NULL;
-		
-		sscanf(parameters, "%ms :%m[^\n]s", &room, &msg);
-		
-		if(!room || !msg)
-		{
-			printf("Malformed PRIVMSG.  Throwing away.\n");
-			
-			free(prefix);
-			free(command);
-			if(room)
-				free(room);
-			if(msg)
-				free(msg);
-			
-			return -1;
-		}
-		
-		if(!strcmp(room, channel))
-		{
-			char *username;
-			
-			sscanf(prefix, ":%m[^!]s", &username);
-			printf("%s: %s\n", username, msg);
-			
-			free(username);
-		}
-		
-		free(room);
-		free(msg);
+		start_privmsgThread(parameters, parameters_len, prefix, prefix_len);
 	}
 	else if(atoi(command))
 	{
-		//miscellaneous codes, none of which I'm concerned with yet
 		if(atoi(command) == 376)
 		{
 			char * packet = malloc(1501);
@@ -167,16 +160,21 @@ int irc_message(char * message)
 	return 0;
 }
 
+void buf_append(char *source, char *dest, int offset, int size)
+{
+	for(int i = offset, c = 0; c<size; i++, c++)
+	{
+		dest[i] = source[c];
+	}
+}
+
 void *listener(void * args)
 {
-	int n;
-	unsigned int m = sizeof(n);
-	getsockopt(sock,SOL_SOCKET,SO_RCVBUF,(void *)&n, &m);
-	
-	char * buffer = malloc(n+1);
-	if(!buffer)
+	char * packet = malloc(65536);
+	char * buffer;
+	if(!packet)
 	{
-		printf("Listener Buffer (%d bytes) not allocated.  Exiting.\n", n);
+		printf("Listener Buffer not allocated.  Exiting.\n");
 		return NULL;
 	}
 	
@@ -184,39 +182,53 @@ void *listener(void * args)
 	
 	while(listener_alive)
 	{
-		int ret = recv(sock, buffer, n+1, 0);
-		if(ret == -1)
+		int buffer_size = 0;
+		buffer = NULL;
+		int ret, cycles = 0;
+		do
 		{
-			printf("Issue with recv: %d.  Closing listener thread.\n", errno);
-			listener_alive = 0;
-			break;
+			ret = recv(sock, packet, 65535, 0);
+			if(ret == -1)
+			{
+				printf("Issue with recv: %d.  Closing listener thread.\n", errno);
+				listener_alive = 0;
+				break;
+			}
+			else if(ret == 0)
+			{
+				printf("Server has performed an orderly shutdown.  Closing listener thread.\n");
+				listener_alive = 0;
+				break;
+			}
+			buffer = realloc(buffer, ret+buffer_size);
+			buf_append(packet, buffer, buffer_size, ret);
+			buffer_size += ret;
+			cycles++;
 		}
-		else if(ret == 0)
-		{
-			printf("Server has performed an orderly shutdown.  Closing listener thread.\n");
-			listener_alive = 0;
-			break;
-		}
+		while(buffer[buffer_size-1] != '\n' && buffer[buffer_size-2] != '\r');
 		
-		buffer[ret] = '\0';
 		char *current = buffer;
 		while(*current)
 		{
 			char *pass;
 			
-			sscanf(current,"%m[^\r]s", &pass);
+			current += substr(current, &pass, '\r')+2;
 			if(!pass)
+			{
+				printf("Issue with malloc in packet splitter.  Stopping Splitter\n");
 				break;
-				
-			current += strlen(pass)+2;
+			}
 			
 			irc_message(pass);
 			
 			free(pass);
 		}
+		
+		if(buffer)
+			free(buffer);
 	}
 
-	free(buffer);
+	free(packet);
 	
 	return NULL;
 }

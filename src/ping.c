@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
 
 #include "irc.h"
 #include "ping.h"
@@ -28,4 +30,21 @@ void *ping(void *code)
 		free(code);
 	
 	return NULL;
+}
+
+void start_pingThread(char * command, int command_len)
+{
+	pthread_t thread;
+	
+	char * pass = malloc(command_len+1);  //the thread will free this when it's done with it
+	if(pass)
+	{
+		strcpy(pass, command);
+	
+		pthread_create(&thread, NULL, ping, (void *) pass);
+	}
+	else
+	{
+		printf("Error in malloc in PING code.  PONG not sent.\n");
+	}
 }
