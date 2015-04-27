@@ -1,6 +1,6 @@
 #ifndef PING_H
 #define PING_H
 
-void *ping(void *code);
+void start_pingThread(char * command, int command_len);
 
 #endif
