@@ -12,6 +12,7 @@
 #include "irc.h"
 #include "ping.h"
 #include "privmsg.h"
+#include "numeric.h"
 
 int sock;
 struct in_addr server_addr;
@@ -142,16 +143,7 @@ int irc_message(char * message)
 	}
 	else if(atoi(command))
 	{
-		if(atoi(command) == 376)
-		{
-			char * packet = malloc(1501);
-			
-			snprintf(packet, 1500, "JOIN %s\r\n", channel);
-			if(irc_send(packet))
-			{
-				return -1;
-			}
-		}
+		start_numericThread(parameters, parameters_len, atoi(command));
 	}
 	
 	free(prefix);

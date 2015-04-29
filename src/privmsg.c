@@ -58,7 +58,7 @@ void start_privmsgThread(char * parameters, int parameters_len, char *prefix, in
 	char ** pass = malloc(sizeof(char*) * 2);
 	pass[0] = malloc(parameters_len+1); 
 	pass[1] = malloc(prefix_len+1);
-	if(pass)
+	if(pass && pass[0] && pass[1])
 	{
 		strcpy(pass[0], parameters);
 		strcpy(pass[1], prefix);
