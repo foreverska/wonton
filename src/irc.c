@@ -14,6 +14,8 @@
 #include "privmsg.h"
 #include "numeric.h"
 
+#include "oauth.h"
+
 int sock;
 struct in_addr server_addr;
 struct sockaddr_in server_sock;
@@ -217,7 +219,9 @@ void *listener(void * args)
 		}
 		
 		if(buffer)
+		{
 			free(buffer);
+		}
 	}
 
 	free(packet);
@@ -229,18 +233,24 @@ void *listener(void * args)
 void irc_ident()
 {
 	char * packet = malloc(1501);
-	
-	sprintf(packet, "NICK %s\r\n", nickname);
+
+	sprintf(packet, "PASS %s\r\n", OAUTH);
 	if(irc_send(packet))
 	{
 		return;
 	}
 	
-	sprintf(packet, "USER %s 0 * :%s\r\n", nickname, "pishaw");
+	sprintf(packet, "NICK %s\r\nUSER %s %s irc.twitch.tv :%s\r\n", nickname, nickname, nickname, nickname);
 	if(irc_send(packet))
 	{
 		return;
 	}
+	
+	/*sprintf(packet, "USER %s %s irc.twitch.tv :%s\r\n", nickname, nickname, nickname);
+	if(irc_send(packet))
+	{
+		return;
+	}*/
 }
 
 int connect_server()

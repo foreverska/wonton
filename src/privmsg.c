@@ -5,6 +5,15 @@
 
 #include "irc.h"
 #include "privmsg.h"
+#include "command.h"
+
+void privmsg_decode(char *username, char *msg)
+{
+	if(msg[0] == '!')
+	{
+		command_decode(username, msg+1);
+	}
+}
 
 void *privmsg(void *args)
 {
@@ -33,11 +42,14 @@ void *privmsg(void *args)
 	{
 		char *username;
 		
+		//format is :[username]![url] PRIVMSG
 		substr(prefix+1, &username, '!');
-		printf("%s: %s\n", username, msg);
-		
+
+		privmsg_decode(username, msg);
+
 		free(username);
 	}
+	
 	
 	free(room);
 	free(msg);
